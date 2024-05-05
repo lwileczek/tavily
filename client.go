@@ -24,7 +24,7 @@ type TavilyRequest struct {
 	ExcludeDomains    []string `json:"exclude_domains,omitempty"`
 }
 
-// TavilyResponse Responses will take this c
+// TavilyResponse is the expected response back from Tavily
 type TavilyResponse struct {
 	Answer            string         `json:"answer"`
 	Query             string         `json:"query"`
@@ -34,31 +34,43 @@ type TavilyResponse struct {
 	Results           []TavilyResult `json:"results"`
 }
 
+// TavilyResult is a single record relating to the search
 type TavilyResult struct {
-	Title      string  `json:"title"`
-	URL        string  `json:"url"`
-	Content    string  `json:"content"`
-	RawContent string  `json:"raw_content"`
-	Score      float64 `json:"score"`
+	Title string `json:"title"`
+	//The URL for the website used
+	URL string `json:"url"`
+	//content which used from the site used
+	Content string `json:"content"`
+	//The raw content from the Website
+	RawContent *string `json:"raw_content"`
+	//Tavily's relevance score
+	Score float64 `json:"score"`
 }
 
-// Client A client to work with Tavily
+// Client A struct to work with Tavily
 type Client struct {
 	APIKey      string
 	maxResults  uint32
 	searchDepth string
 	timeout     time.Duration
+	tavilyURL   string
 }
 
+// SetMaxResults to any positive number to increase the number of results returned
 func (c *Client) SetMaxResults(d uint32) {
-	c.maxResults = 1
+	if d > 0 {
+		c.maxResults = d
+	}
 }
 
 // SetTimeout Set the request timeout in Millisecond (ms)
+// Default is 30,000ms or 30 seconds
 func (c *Client) SetTimeout(d uint32) {
 	c.timeout = time.Millisecond * time.Duration(d)
 }
 
+// SetSearchDepth This allows the user to change the default search depth for all
+// future queries. The Default is 'basic', options: ['basic', 'advanced']
 func (c *Client) SetSearchDepth(d string) error {
 	switch d {
 	case "basic":
@@ -71,8 +83,8 @@ func (c *Client) SetSearchDepth(d string) error {
 	return nil
 }
 
-// NewClient Produce a new Tavily Client with the given API Key
-// If the API key is empty, it will return an error
+// NewClient Produce a new Tavily Client with the given API Key.
+// If the API key is empty, an error is returned
 func NewClient(key string) (*Client, error) {
 	if key == "" {
 		return nil, errors.New("No API Key was provided")
@@ -83,6 +95,7 @@ func NewClient(key string) (*Client, error) {
 		maxResults:  1,
 		searchDepth: "basic",
 		timeout:     30_000 * time.Millisecond,
+		tavilyURL:   TavilyBaseURL,
 	}
 
 	return &c, nil
@@ -96,13 +109,21 @@ func (c *Client) Search(q string, params ...TavilyRequest) (*TavilyResponse, err
 	r := c.defaultReq(q)
 
 	for _, cfg := range params {
-		r.SearchDepth = cfg.SearchDepth
+		if cfg.SearchDepth != "" {
+			r.SearchDepth = cfg.SearchDepth
+		}
 		r.IncludeImages = cfg.IncludeImages
 		r.IncludeAnswer = cfg.IncludeAnswer
 		r.IncludeRawContent = cfg.IncludeRawContent
-		r.MaxResults = cfg.MaxResults
-		r.IncludeDomains = cfg.IncludeDomains
-		r.ExcludeDomains = cfg.ExcludeDomains
+		if cfg.MaxResults != 0 {
+			r.MaxResults = cfg.MaxResults
+		}
+		if len(cfg.IncludeDomains) > 0 {
+			r.IncludeDomains = cfg.IncludeDomains
+		}
+		if len(cfg.ExcludeDomains) > 0 {
+			r.ExcludeDomains = cfg.ExcludeDomains
+		}
 		break
 	}
 
@@ -165,6 +186,8 @@ func (c *Client) QASearchWithCtx(ctx context.Context, q string, params ...Tavily
 	return resp.Answer, nil
 }
 
+// SearchWithDepth Search Tavily with a custom Search Depth just for this query.
+// Otherwise, all defaults are used
 func (c *Client) SearchWithDepth(q string, depth string) (*TavilyResponse, error) {
 	if depth != "basic" && depth != "advanced" {
 		return nil, ErrUnknownDepth
@@ -182,6 +205,8 @@ func (c *Client) SearchWithDepth(q string, depth string) (*TavilyResponse, error
 	return c.search(ctx, &r)
 }
 
+// SearchWithDepth Search Tavily with a custom number of results returned just for this query.
+// Otherwise, all defaults are used
 func (c *Client) SearchWithNResults(q string, n uint32) (*TavilyResponse, error) {
 	ctx := context.Background()
 	r := TavilyRequest{
@@ -195,6 +220,9 @@ func (c *Client) SearchWithNResults(q string, n uint32) (*TavilyResponse, error)
 	return c.search(ctx, &r)
 }
 
+// SearchWithDepth Search Tavily with explicity domains to include or exclude from the search
+// Use empty string slices to avoid including or excluding anything specific.
+// Otherwise, all defaults are used
 func (c *Client) SearchWithDomains(q string, inc []string, exc []string) (*TavilyResponse, error) {
 	ctx := context.Background()
 	r := c.defaultReq(q)
@@ -204,19 +232,32 @@ func (c *Client) SearchWithDomains(q string, inc []string, exc []string) (*Tavil
 	return c.search(ctx, r)
 }
 
+// SearchWithCtx Use Tavily to perform a search but pass in a custom context.Context value
+// ctx - a custom context.Context to use
+// q - a query or search string to use
+// (optionally) TavilyRequest - provide a request object to overwrite all the params of the request
 func (c *Client) SearchWithCtx(ctx context.Context, q string, params ...TavilyRequest) (*TavilyResponse, error) {
 	r := c.defaultReq(q)
 
 	for _, cfg := range params {
-		r.SearchDepth = cfg.SearchDepth
+		if cfg.SearchDepth != "" {
+			r.SearchDepth = cfg.SearchDepth
+		}
 		r.IncludeImages = cfg.IncludeImages
 		r.IncludeAnswer = cfg.IncludeAnswer
 		r.IncludeRawContent = cfg.IncludeRawContent
-		r.MaxResults = cfg.MaxResults
-		r.IncludeDomains = cfg.IncludeDomains
-		r.ExcludeDomains = cfg.ExcludeDomains
+		if cfg.MaxResults != 0 {
+			r.MaxResults = cfg.MaxResults
+		}
+		if len(cfg.IncludeDomains) > 0 {
+			r.IncludeDomains = cfg.IncludeDomains
+		}
+		if len(cfg.ExcludeDomains) > 0 {
+			r.ExcludeDomains = cfg.ExcludeDomains
+		}
 		break
 	}
+
 	return c.search(ctx, r)
 }
 
@@ -239,7 +280,7 @@ func (c *Client) search(ctx context.Context, r *TavilyRequest) (*TavilyResponse,
 	}
 
 	reader := bytes.NewReader(b)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, TavilyBaseURL, reader)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.tavilyURL, reader)
 	if err != nil {
 		slog.Debug("Tavily: Could not make a new request object", "err", err)
 		return nil, err
