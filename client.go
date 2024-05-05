@@ -118,6 +118,7 @@ func (c *Client) QASearch(q string, params ...TavilyRequest) (string, error) {
 	ctx := context.Background()
 	r := c.defaultReq(q)
 	r.IncludeAnswer = true
+	r.SearchDepth = "advanced"
 
 	for _, cfg := range params {
 		r.SearchDepth = cfg.SearchDepth
@@ -145,6 +146,7 @@ func (c *Client) QASearch(q string, params ...TavilyRequest) (string, error) {
 func (c *Client) QASearchWithCtx(ctx context.Context, q string, params ...TavilyRequest) (string, error) {
 	r := c.defaultReq(q)
 	r.IncludeAnswer = true
+	r.SearchDepth = "advanced"
 
 	for _, cfg := range params {
 		r.SearchDepth = cfg.SearchDepth
@@ -280,8 +282,9 @@ func (c *Client) search(ctx context.Context, r *TavilyRequest) (*TavilyResponse,
 		slog.Debug("Tavily: Unable to read the stream from the body", "err", err)
 		return nil, err
 	}
+
 	result := TavilyResponse{}
-	if err = json.Unmarshal(body, &resp); err != nil {
+	if err = json.Unmarshal(body, &result); err != nil {
 		slog.Debug("Issue unmarshalling response from server into our expected struct")
 		return nil, err
 	}
